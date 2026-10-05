@@ -15,9 +15,12 @@ else
 fi
 
 cd "$RVC_DIR"
+
+echo "[2/7] Install"
 python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
 
+echo "[3/7] Fetch training assets"
 hf download lj1995/VoiceConversionWebUI --revision main \
   --include "hubert_base/*" --local-dir assets
 hf download lj1995/VoiceConversionWebUI rmvpe.pt --revision main \
@@ -27,10 +30,19 @@ hf download lj1995/VoiceConversionWebUI --revision main \
 
 test -d "$DATASET" || { echo "Missing dataset: $DATASET"; exit 1; }
 
-python3 train/preprocess.py "$DATASET" 40000 "$WORKERS" "$EXPERIMENT" false 3.7
-python3 train/dataset/extract_f0.py cpu "logs/$EXPERIMENT" "$WORKERS" rmvpe
-python3 train/extract_feature_print.py cpu 0 0 "logs/$EXPERIMENT" v2 true
+echo "[4/7] Preprocess 40kHz"
+python3 train/preprocess.py \
+  "$DATASET" 40000 "$WORKERS" "logs/$EXPERIMENT" false 3.7
 
+echo "[5/7] Extract F0 with RMVPE"
+python3 train/dataset/extract_f0.py \
+  cpu "logs/$EXPERIMENT" "$WORKERS" rmvpe
+
+echo "[6/7] Extract HuBERT features"
+python3 train/dataset/extract_hubert_feature.py \
+  cpu 1 0 "logs/$EXPERIMENT" v2 false
+
+echo "[7/7] Train F0-aware v2 model"
 python3 train/train.py \
   -e "$EXPERIMENT" \
   -sr 40k \
@@ -50,4 +62,5 @@ echo
 echo "Training complete."
 echo "Build the retrieval index:"
 echo "python3 train/train_index.py $EXPERIMENT v2 assets/indices $WORKERS single"
+echo
 echo "Keep the .pth and .index files private."
