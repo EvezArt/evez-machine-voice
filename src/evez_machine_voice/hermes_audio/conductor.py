@@ -218,7 +218,8 @@ def advance_conductor(
 
     seed_base = seed if seed is not None else int(source_sha256[:8], 16)
     key = _key_for_seed(seed_base, previous_state.key if previous_state else None)
-    scale = previous_state.scale if previous_state else theme.mode
+    theme_scale = {"harmonic minor": "harmonic_minor"}.get(theme.mode, theme.mode)
+    scale = previous_state.scale if previous_state else theme_scale
 
     # Major semantic turns may change the harmonic color while preserving the key.
     if {"REVEAL", "RESOLUTION"} & set(events):
