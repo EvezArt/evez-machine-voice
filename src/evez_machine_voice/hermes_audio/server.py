@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
+import json
 import os
+import re
 import subprocess
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from .album import export_album
 from .config import SETTINGS
+from .conductor import advance_conductor, state_from_dict, write_conductor_step
 from .mix import mix
 from .music import MusicEngine
 from .music_memory import load_index
@@ -17,9 +23,10 @@ from .performance import PRESETS, PerformanceKind, PerformanceSpec, make_prompt
 from .provenance import write_manifest
 from .score_compiler import compile_performance, write_plan
 from .scene_director import direct_scene, write_scene
+from .session_ledger import append_record, read_records, verify_chain
 from .voice_clone import VoiceClone
 
-app = FastAPI(title="EVEZ Hermes Audio", version="0.3.0")
+app = FastAPI(title="EVEZ Hermes Audio", version="0.4.0")
 voice = VoiceClone()
 music = MusicEngine()
 
@@ -63,6 +70,21 @@ class PerformancePlanRequest(BaseModel):
     seed: int | None = None
 
 
+class ConductorRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128, pattern=r"[A-Za-z0-9_.-]+")
+    response_text: str = Field(min_length=1, max_length=20000)
+    duration_seconds: int = Field(default=30, ge=5, le=600)
+    energy: float = Field(default=0.55, ge=0, le=1)
+    surrealism: float = Field(default=0.70, ge=0, le=1)
+    theme: str | None = None
+    performance_kind: PerformanceKind | None = None
+    seed: int | None = None
+
+
+class SessionExportRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128, pattern=r"[A-Za-z0-9_.-]+")
+
+
 class ScoreRequest(BaseModel):
     response_text: str = Field(min_length=1, max_length=20000)
     lyrics: str = ""
@@ -76,6 +98,37 @@ class ScoreRequest(BaseModel):
 def auth(token: str | None):
     if SETTINGS.token and not hmac.compare_digest(token or "", SETTINGS.token):
         raise HTTPException(401, "invalid audio token")
+
+
+def _session_dir(session_id: str) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", session_id):
+        raise HTTPException(400, "invalid session_id")
+    return SETTINGS.output_dir / "sessions" / session_id
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _artifact_payload(
+    state: str,
+    *,
+    path: Path | None = None,
+    sha256: str | None = None,
+    manifest: Path | None = None,
+    error: str | None = None,
+) -> dict:
+    return {
+        "state": state,
+        "path": str(path) if path else None,
+        "sha256": sha256,
+        "manifest": str(manifest) if manifest else None,
+        "error": error,
+    }
 
 
 def memory_tracks():
@@ -160,10 +213,92 @@ def scene(req: SceneRequest, x_hermes_audio_token: str | None = Header(default=N
         "scale": rendered.scale,
         "vocal_mode": rendered.vocal_mode,
         "arc": rendered.arc,
-        "sections": [s.__dict__ for s in rendered.sections],
+        "sections": [asdict(s) for s in rendered.sections],
         "mix_plan": rendered.mix_plan,
         "output": str(output),
     }
+
+
+@app.post("/v1/hermes/conductor/step")
+def conductor_step(req: ConductorRequest, x_hermes_audio_token: str | None = Header(default=None)):
+    auth(x_hermes_audio_token)
+    session_dir = _session_dir(req.session_id)
+    records = read_records(session_dir)
+    previous_state = None
+
+    if records:
+        state_path = session_dir / f"turn-{records[-1].turn_index:04d}-state.json"
+        if not state_path.exists():
+            raise HTTPException(500, "session ledger exists but latest state artifact is missing")
+        try:
+            previous_state = state_from_dict(json.loads(state_path.read_text(encoding="utf-8")))
+        except Exception as exc:
+            raise HTTPException(500, f"invalid conductor state: {exc}") from exc
+
+    step = advance_conductor(
+        req.response_text,
+        session_id=req.session_id,
+        previous_state=previous_state,
+        duration_seconds=req.duration_seconds,
+        energy=req.energy,
+        surrealism=req.surrealism,
+        explicit_theme=req.theme,
+        performance_kind=req.performance_kind,
+        seed=req.seed,
+    )
+
+    paths = write_conductor_step(step, session_dir)
+    record = append_record(
+        session_dir,
+        session_id=req.session_id,
+        turn_index=step.state.turn_index,
+        state_sha256=step.state.state_sha256,
+        scene_sha256=step.scene.scene_sha256,
+        plan_sha256=step.performance_plan.plan_sha256,
+        source_sha256=step.performance_plan.source_sha256,
+        events=step.events,
+    )
+
+    return {
+        "session_id": req.session_id,
+        "turn_index": step.state.turn_index,
+        "state": asdict(step.state),
+        "events": list(step.events),
+        "scene": {
+            "scene_sha256": step.scene.scene_sha256,
+            "theme": step.scene.theme,
+            "bpm": step.scene.bpm,
+            "key": step.scene.key,
+            "scale": step.scene.scale,
+            "vocal_mode": step.scene.vocal_mode,
+            "output": paths["scene"],
+        },
+        "performance_plan": {
+            "plan_sha256": step.performance_plan.plan_sha256,
+            "kind": step.performance_plan.performance_kind,
+            "bpm": step.performance_plan.bpm,
+            "key": step.performance_plan.key,
+            "scale": step.performance_plan.scale,
+            "output": paths["plan"],
+        },
+        "rationale": step.rationale,
+        "session_record_sha256": record.record_sha256,
+    }
+
+
+@app.get("/v1/hermes/session/verify/{session_id}")
+def session_verify(session_id: str, x_hermes_audio_token: str | None = Header(default=None)):
+    auth(x_hermes_audio_token)
+    return verify_chain(_session_dir(session_id))
+
+
+@app.post("/v1/hermes/session/export")
+def session_export(req: SessionExportRequest, x_hermes_audio_token: str | None = Header(default=None)):
+    auth(x_hermes_audio_token)
+    session_dir = _session_dir(req.session_id)
+    if not (session_dir / "session-ledger.jsonl").exists():
+        raise HTTPException(404, "session not found")
+    return export_album(session_dir, session_dir / "album")
 
 
 @app.post("/v1/hermes/performance-plan")
@@ -250,6 +385,12 @@ def render_performance(
         "performance": str(output),
         "manifest": str(manifest),
         "kind": req.performance_kind,
+        "audio_artifact": _artifact_payload(
+            "PRODUCED",
+            path=output,
+            sha256=_file_sha256(output),
+            manifest=manifest,
+        ),
         "stdout": result.stdout[-2000:],
     }
 
