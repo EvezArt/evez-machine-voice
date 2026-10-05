@@ -60,3 +60,10 @@ def test_session_ledger_verifies_and_detects_tamper(tmp_path: Path):
     result = verify_chain(tmp_path)
     assert result["ok"] is False
     assert result["problems"]
+
+
+def test_conductor_scene_inherits_plan_tempo():
+    step = advance_conductor("A dangerous technical reveal.", session_id="tempo", seed=4)
+    assert step.scene.bpm == step.performance_plan.bpm
+    assert step.scene.key == step.performance_plan.key
+    assert step.scene.scale == step.performance_plan.scale
