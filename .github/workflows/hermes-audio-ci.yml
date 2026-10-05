@@ -9,6 +9,7 @@ on:
       - "tests/test_score_compiler.py"
       - "tests/test_conductor.py"
       - "tests/test_album.py"
+      - "tests/test_audio_jobs.py"
       - "config/hermes-*.yaml"
       - "pyproject.toml"
   pull_request:
@@ -37,7 +38,7 @@ jobs:
         run: pytest -q
 
       - name: Hermes control-plane tests
-        run: pytest -q tests/test_scene_director.py tests/test_score_compiler.py tests/test_conductor.py tests/test_album.py
+        run: pytest -q tests/test_scene_director.py tests/test_score_compiler.py tests/test_conductor.py tests/test_album.py tests/test_audio_jobs.py
 
       - name: Compile Python
         run: python -m compileall -q src/evez_machine_voice
