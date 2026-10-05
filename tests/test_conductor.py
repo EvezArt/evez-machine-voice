@@ -50,6 +50,8 @@ def test_session_ledger_verifies_and_detects_tamper(tmp_path: Path):
         plan_sha256=step.performance_plan.plan_sha256,
         source_sha256=step.performance_plan.source_sha256,
         events=step.events,
+        audit_sha256="audit123",
+        audit_verdict="PASS",
         recorded_at="2026-10-05T00:00:00+00:00",
     )
     assert verify_chain(tmp_path)["ok"] is True
@@ -67,3 +69,24 @@ def test_conductor_scene_inherits_plan_tempo():
     assert step.scene.bpm == step.performance_plan.bpm
     assert step.scene.key == step.performance_plan.key
     assert step.scene.scale == step.performance_plan.scale
+
+
+def test_session_record_binds_audit_verdict(tmp_path: Path):
+    step = advance_conductor("A confirmed technical resolution.", session_id="audit-bound", seed=6)
+    append_record(
+        tmp_path,
+        session_id="audit-bound",
+        turn_index=0,
+        state_sha256=step.state.state_sha256,
+        scene_sha256=step.scene.scene_sha256,
+        plan_sha256=step.performance_plan.plan_sha256,
+        source_sha256=step.performance_plan.source_sha256,
+        events=step.events,
+        audit_sha256="audit-sha",
+        audit_verdict="PASS",
+        recorded_at="2026-10-05T00:00:00+00:00",
+    )
+    records = __import__("evez_machine_voice.hermes_audio.session_ledger", fromlist=["read_records"]).read_records(tmp_path)
+    assert records[0].audit_sha256 == "audit-sha"
+    assert records[0].audit_verdict == "PASS"
+    assert verify_chain(tmp_path)["ok"] is True
