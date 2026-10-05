@@ -181,14 +181,18 @@ def compile_performance(
     explicit_theme: str | None = None,
     bpm: int | None = None,
     seed: int | None = None,
+    key: str | None = None,
+    scale: str | None = None,
 ) -> PerformancePlan:
     source_sha256 = _hash_text(response_text)
     actual_seed = _seed(source_sha256, seed)
     theme = select_theme(response_text, explicit_theme)
     performance_kind = _kind_from_text(response_text, kind)
     expression: Expression = PRESETS[performance_kind]
-    key, scale_name = _choose_key_scale(theme, actual_seed)
-    scale = SCALES[scale_name]
+    chosen_key, chosen_scale = _choose_key_scale(theme, actual_seed)
+    key_name = key if key in KEY_ROOTS else chosen_key
+    scale_name = scale if scale in SCALES else chosen_scale
+    scale_values = SCALES[scale_name]
 
     tokens = _tokens(response_text)
     usable_tokens = tokens[:96]
@@ -201,7 +205,7 @@ def compile_performance(
     if performance_kind == "beatbox":
         base_bpm = max(base_bpm, 120)
 
-    root = KEY_ROOTS[key]
+    root = KEY_ROOTS[key_name]
     notes: list[NoteEvent] = []
     expressions: list[ExpressionEvent] = []
     percussion: list[PercussionEvent] = []
@@ -234,7 +238,7 @@ def compile_performance(
             if performance_kind == "vocaloid" and section_name == "HOOK":
                 octave = 1 if index % 7 == 0 else 0
 
-            midi_note = _scale_pitch(root, scale, desired_degree, octave)
+            midi_note = _scale_pitch(root, scale_values, desired_degree, octave)
 
             if token.endswith((".", "!", "?")):
                 duration = 1.5 if performance_kind in ("sustain", "vocaloid") else 1.0
@@ -304,7 +308,7 @@ def compile_performance(
         "source_sha256": source_sha256,
         "theme": theme.name,
         "bpm": base_bpm,
-        "key": key,
+        "key": key_name,
         "scale": scale_name,
         "performance_kind": performance_kind,
         "lyrics": usable_tokens,
@@ -322,7 +326,7 @@ def compile_performance(
         source_sha256=source_sha256,
         theme=theme.name,
         bpm=base_bpm,
-        key=key,
+        key=key_name,
         scale=scale_name,
         performance_kind=performance_kind,
         lyrics=usable_tokens,
