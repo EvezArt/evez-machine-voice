@@ -15,6 +15,7 @@ from .music_memory import load_index
 from .orchestrator import generate_score
 from .performance import PRESETS, PerformanceKind, PerformanceSpec, make_prompt
 from .provenance import write_manifest
+from .score_compiler import compile_performance, write_plan
 from .voice_clone import VoiceClone
 
 app = FastAPI(title="EVEZ Hermes Audio", version="0.3.0")
@@ -41,6 +42,14 @@ class PerformanceRequest(BaseModel):
     guide_audio: str = Field(min_length=1)
     performance_kind: PerformanceKind = "vocaloid"
     output_name: str = "hermes-performance.wav"
+
+
+class PerformancePlanRequest(BaseModel):
+    response_text: str = Field(min_length=1, max_length=20000)
+    performance_kind: PerformanceKind | None = None
+    theme: str | None = None
+    bpm: int | None = Field(default=None, ge=40, le=240)
+    seed: int | None = None
 
 
 class ScoreRequest(BaseModel):
@@ -114,6 +123,34 @@ def respond(req: HermesRequest, x_hermes_audio_token: str | None = Header(defaul
         "theme": theme.name,
         "bpm": theme.bpm,
         "mode": theme.mode,
+    }
+
+
+@app.post("/v1/hermes/performance-plan")
+def performance_plan(req: PerformancePlanRequest, x_hermes_audio_token: str | None = Header(default=None)):
+    auth(x_hermes_audio_token)
+    plan = compile_performance(
+        req.response_text,
+        kind=req.performance_kind,
+        explicit_theme=req.theme,
+        bpm=req.bpm,
+        seed=req.seed,
+    )
+    json_path = SETTINGS.output_dir / f"plan-{plan.plan_sha256[:16]}.json"
+    midi_path = SETTINGS.output_dir / f"plan-{plan.plan_sha256[:16]}.mid"
+    outputs = write_plan(plan, json_path, midi_path)
+    return {
+        "plan_sha256": plan.plan_sha256,
+        "source_sha256": plan.source_sha256,
+        "theme": plan.theme,
+        "kind": plan.performance_kind,
+        "bpm": plan.bpm,
+        "key": plan.key,
+        "scale": plan.scale,
+        "sections": plan.sections,
+        "note_count": len(plan.notes),
+        "percussion_count": len(plan.percussion),
+        "outputs": outputs,
     }
 
 
