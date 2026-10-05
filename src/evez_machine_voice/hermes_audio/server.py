@@ -9,10 +9,12 @@ import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .album import export_album
+from .audio_jobs import AudioJobStore
+from .audio_state import AudioState
 from .config import SETTINGS
 from .conductor import advance_conductor, state_from_dict, write_conductor_step
 from .mix import mix
@@ -26,9 +28,10 @@ from .scene_director import direct_scene, write_scene
 from .session_ledger import append_record, read_records, verify_chain
 from .voice_clone import VoiceClone
 
-app = FastAPI(title="EVEZ Hermes Audio", version="0.4.0")
+app = FastAPI(title="EVEZ Hermes Audio", version="0.5.0")
 voice = VoiceClone()
 music = MusicEngine()
+job_store = AudioJobStore(SETTINGS.output_dir / "jobs")
 
 
 class HermesRequest(BaseModel):
@@ -47,6 +50,12 @@ class HermesRequest(BaseModel):
 
 
 class PerformanceRequest(BaseModel):
+    guide_audio: str = Field(min_length=1)
+    performance_kind: PerformanceKind = "vocaloid"
+    output_name: str = "hermes-performance.wav"
+
+
+class PerformanceJobRequest(BaseModel):
     guide_audio: str = Field(min_length=1)
     performance_kind: PerformanceKind = "vocaloid"
     output_name: str = "hermes-performance.wav"
@@ -114,6 +123,22 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _safe_output_name(name: str) -> str:
+    safe = Path(name).name
+    if safe != name or safe in {"", ".", ".."}:
+        raise HTTPException(400, "output_name must be a simple file name")
+    return safe
+
+
+def _performance_script() -> Path:
+    return Path(
+        os.getenv(
+            "EVEZ_HERMES_PERFORMANCE_SCRIPT",
+            str(Path(__file__).resolve().parents[4] / "scripts" / "hermes-vocal-performance.sh"),
+        )
+    )
+
+
 def _artifact_payload(
     state: str,
     *,
@@ -129,6 +154,54 @@ def _artifact_payload(
         "manifest": str(manifest) if manifest else None,
         "error": error,
     }
+
+
+def _run_audio_job(job_id: str) -> None:
+    job = job_store.get(job_id)
+    job = job_store.update(job, AudioState.RENDERING)
+
+    guide = Path(job.guide_audio).expanduser().resolve()
+    script = _performance_script()
+
+    if not guide.exists() or not guide.is_file():
+        job_store.update(job, AudioState.FAILED, error="guide audio not found")
+        return
+    if not script.exists():
+        job_store.update(job, AudioState.FAILED, error="Hermes performance script is not installed")
+        return
+
+    output = SETTINGS.output_dir / job.output_name
+    cmd = ["bash", str(script), str(guide), str(output), job.performance_kind]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        job_store.update(
+            job,
+            AudioState.FAILED,
+            error=result.stderr[-5000:] or "performance rendering failed",
+        )
+        return
+
+    try:
+        manifest = write_manifest(
+            output,
+            pipeline=f"hermes-performance:{job.performance_kind}",
+            inputs={"guide_audio": str(guide)},
+            models={"voice_conversion": "RVC local"},
+            params={"preset": job.performance_kind},
+            rights_state="OWNER_PERFORMANCE_INPUT",
+        )
+        sha256 = _file_sha256(output)
+    except Exception as exc:
+        job_store.update(job, AudioState.FAILED, error=f"manifest/fingerprint failed: {exc}")
+        return
+
+    job_store.update(
+        job,
+        AudioState.PRODUCED,
+        output_path=str(output),
+        manifest_path=str(manifest),
+        sha256=sha256,
+    )
 
 
 def memory_tracks():
@@ -286,6 +359,37 @@ def conductor_step(req: ConductorRequest, x_hermes_audio_token: str | None = Hea
     }
 
 
+@app.post("/v1/hermes/performance-job")
+def performance_job(
+    req: PerformanceJobRequest,
+    background_tasks: BackgroundTasks,
+    x_hermes_audio_token: str | None = Header(default=None),
+):
+    auth(x_hermes_audio_token)
+    output_name = _safe_output_name(req.output_name)
+    guide = Path(req.guide_audio).expanduser().resolve()
+    if not guide.exists() or not guide.is_file():
+        raise HTTPException(404, "guide audio not found")
+
+    job = job_store.create(
+        guide_audio=str(guide),
+        performance_kind=req.performance_kind,
+        output_name=output_name,
+    )
+    background_tasks.add_task(_run_audio_job, job.job_id)
+    return job_store.payload(job)
+
+
+@app.get("/v1/hermes/performance-job/{job_id}")
+def performance_job_status(job_id: str, x_hermes_audio_token: str | None = Header(default=None)):
+    auth(x_hermes_audio_token)
+    try:
+        job = job_store.get(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "audio job not found") from exc
+    return job_store.payload(job)
+
+
 @app.get("/v1/hermes/session/verify/{session_id}")
 def session_verify(session_id: str, x_hermes_audio_token: str | None = Header(default=None)):
     auth(x_hermes_audio_token)
@@ -356,16 +460,11 @@ def render_performance(
     if not guide.exists() or not guide.is_file():
         raise HTTPException(404, "guide audio not found")
 
-    script = Path(
-        os.getenv(
-            "EVEZ_HERMES_PERFORMANCE_SCRIPT",
-            str(Path(__file__).resolve().parents[4] / "scripts" / "hermes-vocal-performance.sh"),
-        )
-    )
+    script = _performance_script()
     if not script.exists():
         raise HTTPException(500, "Hermes performance script is not installed")
 
-    output = SETTINGS.output_dir / req.output_name
+    output = SETTINGS.output_dir / _safe_output_name(req.output_name)
     cmd = ["bash", str(script), str(guide), str(output), req.performance_kind]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
