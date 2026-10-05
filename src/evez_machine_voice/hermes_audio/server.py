@@ -16,6 +16,7 @@ from .orchestrator import generate_score
 from .performance import PRESETS, PerformanceKind, PerformanceSpec, make_prompt
 from .provenance import write_manifest
 from .score_compiler import compile_performance, write_plan
+from .scene_director import direct_scene, write_scene
 from .voice_clone import VoiceClone
 
 app = FastAPI(title="EVEZ Hermes Audio", version="0.3.0")
@@ -42,6 +43,16 @@ class PerformanceRequest(BaseModel):
     guide_audio: str = Field(min_length=1)
     performance_kind: PerformanceKind = "vocaloid"
     output_name: str = "hermes-performance.wav"
+
+
+class SceneRequest(BaseModel):
+    response_text: str = Field(min_length=1, max_length=20000)
+    duration_seconds: int = Field(default=30, ge=5, le=600)
+    energy: float = Field(default=0.55, ge=0, le=1)
+    surrealism: float = Field(default=0.70, ge=0, le=1)
+    theme: str | None = None
+    performance_kind: PerformanceKind | None = None
+    seed: int | None = None
 
 
 class PerformancePlanRequest(BaseModel):
@@ -123,6 +134,35 @@ def respond(req: HermesRequest, x_hermes_audio_token: str | None = Header(defaul
         "theme": theme.name,
         "bpm": theme.bpm,
         "mode": theme.mode,
+    }
+
+
+@app.post("/v1/hermes/scene")
+def scene(req: SceneRequest, x_hermes_audio_token: str | None = Header(default=None)):
+    auth(x_hermes_audio_token)
+    rendered = direct_scene(
+        req.response_text,
+        duration_seconds=req.duration_seconds,
+        energy=req.energy,
+        surrealism=req.surrealism,
+        explicit_theme=req.theme,
+        performance_kind=req.performance_kind,
+        seed=req.seed,
+    )
+    output = SETTINGS.output_dir / f"scene-{rendered.scene_sha256[:16]}.json"
+    write_scene(rendered, output)
+    return {
+        "scene_sha256": rendered.scene_sha256,
+        "source_sha256": rendered.source_sha256,
+        "theme": rendered.theme,
+        "bpm": rendered.bpm,
+        "key": rendered.key,
+        "scale": rendered.scale,
+        "vocal_mode": rendered.vocal_mode,
+        "arc": rendered.arc,
+        "sections": [s.__dict__ for s in rendered.sections],
+        "mix_plan": rendered.mix_plan,
+        "output": str(output),
     }
 
 
