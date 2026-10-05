@@ -4,9 +4,9 @@ from pathlib import Path
 
 from .acestep_api import ACEStepClient
 from .music_memory import TrackFingerprint, palette_prompt, select_palette
-from .performance import PRESETS, PerformanceKind
+from .performance import PerformanceKind
 from .provenance import sha256_text, write_manifest
-from .theme import select_theme
+from .theme import Theme, select_theme
 
 
 def infer_performance_kind(text: str) -> PerformanceKind:
@@ -29,29 +29,35 @@ def build_music_context(
     tracks: list[TrackFingerprint],
     energy: float,
     surrealism: float,
-):
-    theme = select_theme(response_text)
-    bpm = theme.bpm
-    palette = select_palette(tracks, bpm=bpm, mode="minor", energy=energy, surrealism=surrealism)
+    explicit_theme: str | None = None,
+) -> tuple[Theme, list[TrackFingerprint]]:
+    theme = select_theme(response_text, explicit_theme)
+    palette = select_palette(
+        tracks,
+        bpm=theme.bpm,
+        mode="minor",
+        energy=energy,
+        surrealism=surrealism,
+    )
     return theme, palette
 
 
 def build_score_prompt(
     response_text: str,
-    theme,
+    theme: Theme,
     palette: list[TrackFingerprint],
     energy: float,
     surrealism: float,
 ) -> str:
     fingerprint_context = palette_prompt(palette)
     return (
-        f"Original cinematic score for a spoken or sung response. "
+        "Original cinematic score for a spoken or sung response. "
         f"Theme: {theme.name}. Tempo: {theme.bpm} BPM. Mode: {theme.mode}. "
         f"Texture: {theme.texture}. Arrangement: {theme.arrangement}. "
         f"Energy {energy:.2f}; surrealism {surrealism:.2f}. "
         f"Private musical-memory descriptors: {fingerprint_context}. "
         f"Response semantics: {response_text[:1600]}. "
-        f"Create a new composition. Do not reproduce a source melody."
+        "Create a new composition. Do not reproduce a source melody."
     )
 
 
@@ -64,18 +70,24 @@ def generate_score(
     *,
     lyrics: str = "",
     seed: int | None = None,
+    explicit_theme: str | None = None,
+    duration: float = 30,
 ) -> dict:
-    theme, palette = build_music_context(response_text, tracks, energy, surrealism)
+    theme, palette = build_music_context(
+        response_text, tracks, energy, surrealism, explicit_theme
+    )
     prompt = build_score_prompt(response_text, theme, palette, energy, surrealism)
 
     client = ACEStepClient()
-    output = output_dir / f"score-{theme.name}-{abs(hash(prompt))}.wav"
+    stable_hash = sha256_text(prompt)[:16]
+    output = output_dir / f"score-{theme.name}-{stable_hash}.wav"
+
     task_id = client.submit(
         prompt=prompt,
         lyrics=lyrics,
         bpm=theme.bpm,
         key_scale=f"{theme.mode}",
-        duration=30,
+        duration=duration,
         thinking=True,
         seed=seed,
     )
@@ -99,6 +111,7 @@ def generate_score(
             "mode": theme.mode,
             "energy": energy,
             "surrealism": surrealism,
+            "duration": duration,
         },
         rights_state="FINGERPRINT_ONLY_ORIGINAL_GENERATION",
     )
@@ -109,5 +122,6 @@ def generate_score(
         "theme": theme.name,
         "bpm": theme.bpm,
         "mode": theme.mode,
+        "palette": [track.path for track in palette],
         "task_id": task_id,
     }
