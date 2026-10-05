@@ -1,0 +1,73 @@
+version: 1
+
+identity:
+  performer: "Steven Crawford-Maggard"
+  voice_id: "steven"
+  owner_voice_only: true
+
+pipeline:
+  performance:
+    inputs:
+      - lyrics
+      - optional_midi_or_note_map
+      - optional_recorded_guide
+      - expression_profile
+  guide:
+    preferred: recorded
+    fallback: generated
+    generated_backends:
+      - diffsinger
+      - ace-step
+  timbre:
+    backend: rvc
+    f0_method: rmvpe
+    singing_model: true
+  expression_fx:
+    enabled: true
+    preserve_original_dynamics: true
+  music:
+    backend: ace-step
+    original_score_default: true
+    duck_under_voice_db: -18
+  master:
+    sample_rate: 48000
+    target_lufs: -15
+    true_peak_db: -1.5
+
+performance_presets:
+  vocaloid:
+    vibrato: 0.38
+    sustain: 0.68
+    articulation: 0.78
+  rap:
+    cadence: 0.88
+    articulation: 0.96
+    attack: 0.82
+  beatbox:
+    beatbox: 1.0
+    articulation: 1.0
+    attack: 0.98
+  rasp:
+    rasp: 0.88
+    grit: 0.72
+    fry: 0.42
+    sustain: 0.72
+  sustain:
+    vibrato: 0.56
+    legato: 0.94
+    sustain: 0.98
+
+routing:
+  response_types:
+    factual: spoken
+    explanation: cinematic
+    dramatic: sustain
+    punchline: rap
+    hype: beatbox
+    confrontation: rasp
+    surreal: vocaloid
+
+privacy:
+  training_recordings_never_commit: true
+  model_weights_never_commit: true
+  private_reference_directory: data/hermes/voices/steven
