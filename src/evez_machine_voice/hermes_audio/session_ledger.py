@@ -21,6 +21,8 @@ class SessionRecord:
     source_sha256: str
     events: tuple[str, ...]
     audio: dict[str, Any] | None
+    audit_sha256: str | None
+    audit_verdict: str | None
     record_sha256: str
 
 
@@ -74,6 +76,8 @@ def append_record(
     source_sha256: str,
     events: tuple[str, ...],
     audio: dict[str, Any] | None = None,
+    audit_sha256: str | None = None,
+    audit_verdict: str | None = None,
     recorded_at: str | None = None,
 ) -> SessionRecord:
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -100,6 +104,8 @@ def append_record(
         "source_sha256": source_sha256,
         "events": list(events),
         "audio": audio,
+        "audit_sha256": audit_sha256,
+        "audit_verdict": audit_verdict,
     }
     record_sha = _hash(canonical)
 
@@ -115,6 +121,8 @@ def append_record(
         source_sha256=source_sha256,
         events=events,
         audio=audio,
+        audit_sha256=audit_sha256,
+        audit_verdict=audit_verdict,
         record_sha256=record_sha,
     )
 
