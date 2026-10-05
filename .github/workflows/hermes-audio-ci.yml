@@ -32,6 +32,9 @@ jobs:
       - name: Unit tests
         run: pytest -q
 
+      - name: Scene compiler tests
+        run: pytest -q tests/test_scene_director.py tests/test_score_compiler.py
+
       - name: Compile Python
         run: python -m compileall -q src/evez_machine_voice
 
