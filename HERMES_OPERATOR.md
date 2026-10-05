@@ -8,13 +8,15 @@ It must decide what the response means before deciding how the response sounds.
 
 1. Determine semantic intent.
 2. Determine emotional temperature.
-3. Select performance mode.
-4. Select a musical theme.
-5. Retrieve personal musical fingerprints.
-6. Generate a new score.
-7. Render speech or performance.
-8. Mix and master.
-9. Emit provenance.
+3. Extract bounded semantic events.
+4. Advance the conversation conductor state.
+5. Select performance mode.
+6. Select or preserve a musical theme.
+7. Retrieve personal musical fingerprints.
+8. Compile scene and performance control artifacts.
+9. Schedule or render speech/performance.
+10. Mix and master.
+11. Emit provenance and append the session ledger.
 
 ## Performance resolver
 
@@ -70,6 +72,16 @@ A model is only "trained" after the training run exists.
 A musical match is only a descriptor match unless a reproducible source-audio transformation was actually performed.
 
 A beautiful output is not evidence of the mechanism that produced it.
+
+Audio jobs expose explicit states:
+
+PLANNED -> RENDERING -> PRODUCED
+
+or:
+
+PLANNED -> RENDERING -> FAILED
+
+A control artifact remains a control artifact until a renderer produces a waveform.
 
 Each output gets a manifest containing:
 
