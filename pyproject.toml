@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evez-machine-voice"
-version = "1.1.0"
-description = "EVEZ machine voice plus local Hermes cinematic audio sidecar"
+version = "1.2.0"
+description = "EVEZ machine voice plus local Hermes cinematic and Vocaloid-style performance audio"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
     {name = "Steven Crawford-Maggard", email = "steven@evez-os.ai"},
 ]
-keywords = ["voice", "synthesis", "tts", "cinematic", "music", "hermes", "evez"]
+keywords = ["voice", "synthesis", "tts", "cinematic", "music", "hermes", "evez", "singing", "rap", "beatbox"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
@@ -29,6 +29,7 @@ hermes = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.34,<1",
     "pydantic>=2.10,<3",
+    "requests>=2.32,<3",
 ]
 audio = [
     "librosa>=0.10,<1",
