@@ -11,10 +11,13 @@ from pydantic import BaseModel, Field
 from .config import SETTINGS
 from .mix import mix
 from .music import MusicEngine
-from .performance import PRESETS, PerformanceKind, Expression, PerformanceSpec, make_prompt
+from .music_memory import load_index
+from .orchestrator import generate_score
+from .performance import PRESETS, PerformanceKind, PerformanceSpec, make_prompt
+from .provenance import write_manifest
 from .voice_clone import VoiceClone
 
-app = FastAPI(title="EVEZ Hermes Audio", version="0.2.0")
+app = FastAPI(title="EVEZ Hermes Audio", version="0.3.0")
 voice = VoiceClone()
 music = MusicEngine()
 
@@ -40,9 +43,29 @@ class PerformanceRequest(BaseModel):
     output_name: str = "hermes-performance.wav"
 
 
+class ScoreRequest(BaseModel):
+    response_text: str = Field(min_length=1, max_length=20000)
+    lyrics: str = ""
+    theme: str | None = None
+    duration_seconds: int = Field(default=30, ge=10, le=600)
+    energy: float = Field(default=0.55, ge=0, le=1)
+    surrealism: float = Field(default=0.70, ge=0, le=1)
+    seed: int | None = None
+
+
 def auth(token: str | None):
     if SETTINGS.token and not hmac.compare_digest(token or "", SETTINGS.token):
         raise HTTPException(401, "invalid audio token")
+
+
+def memory_tracks():
+    index = Path(os.getenv("EVEZ_MUSIC_MEMORY_INDEX", "data/hermes/music-memory.json"))
+    if not index.exists():
+        return []
+    try:
+        return load_index(index)
+    except Exception as exc:
+        raise HTTPException(500, f"invalid music-memory index: {exc}") from exc
 
 
 @app.get("/health")
@@ -52,6 +75,7 @@ def health():
         "service": "evez-hermes-audio",
         "voice": SETTINGS.default_voice,
         "performance_presets": list(PRESETS),
+        "music_memory": len(memory_tracks()),
     }
 
 
@@ -93,6 +117,22 @@ def respond(req: HermesRequest, x_hermes_audio_token: str | None = Header(defaul
     }
 
 
+@app.post("/v1/hermes/score")
+def score(req: ScoreRequest, x_hermes_audio_token: str | None = Header(default=None)):
+    auth(x_hermes_audio_token)
+    return generate_score(
+        req.response_text,
+        memory_tracks(),
+        SETTINGS.output_dir,
+        req.energy,
+        req.surrealism,
+        lyrics=req.lyrics,
+        seed=req.seed,
+        explicit_theme=req.theme,
+        duration=req.duration_seconds,
+    )
+
+
 @app.post("/v1/hermes/performance")
 def render_performance(
     req: PerformanceRequest,
@@ -120,8 +160,18 @@ def render_performance(
     if result.returncode != 0:
         raise HTTPException(500, result.stderr[-5000:] or "performance rendering failed")
 
+    manifest = write_manifest(
+        output,
+        pipeline=f"hermes-performance:{req.performance_kind}",
+        inputs={"guide_audio": str(guide)},
+        models={"voice_conversion": "RVC local"},
+        params={"preset": req.performance_kind},
+        rights_state="OWNER_PERFORMANCE_INPUT",
+    )
+
     return {
         "performance": str(output),
+        "manifest": str(manifest),
         "kind": req.performance_kind,
         "stdout": result.stdout[-2000:],
     }
