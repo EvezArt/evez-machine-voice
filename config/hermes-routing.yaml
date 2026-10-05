@@ -1,0 +1,57 @@
+version: 1
+
+performance_routes:
+  spoken:
+    voice_engine: f5_tts
+    soundtrack: cinematic
+  factual:
+    voice_engine: f5_tts
+    soundtrack: technical
+  explanation:
+    voice_engine: f5_tts
+    soundtrack: discovery
+  dramatic:
+    voice_engine: rvc_performance
+    preset: sustain
+    soundtrack: reflection
+  punchline:
+    voice_engine: rvc_performance
+    preset: rap
+    soundtrack: danger
+  hype:
+    voice_engine: rvc_performance
+    preset: beatbox
+    soundtrack: technical
+  confrontation:
+    voice_engine: rvc_performance
+    preset: rasp
+    soundtrack: danger
+  surreal:
+    voice_engine: rvc_performance
+    preset: vocaloid
+    soundtrack: surreal
+
+music_memory:
+  enabled: true
+  index: data/hermes/music-memory.json
+  source_mode: fingerprint_only
+  retrieve_tracks: 5
+  descriptors:
+    - bpm
+    - key
+    - mode
+    - rms_db
+    - spectral_centroid_hz
+    - spectral_bandwidth_hz
+    - pulse_density
+
+rights:
+  default_generation: original
+  source_audio_remix_requires_explicit_authorization: true
+
+provenance:
+  hash_source_audio: true
+  hash_prompts: true
+  hash_output_audio: true
+  record_model_name: true
+  record_model_revision: true
