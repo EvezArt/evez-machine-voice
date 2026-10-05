@@ -49,3 +49,14 @@ def test_json_plan_written(tmp_path: Path):
     write_plan(plan, out)
     saved = json.loads(out.read_text())
     assert saved["plan_sha256"] == plan.plan_sha256
+
+
+def test_key_and_scale_overrides_are_honored():
+    plan = compile_performance(
+        "sing a continuous harmonic motif",
+        seed=12,
+        key="F#",
+        scale="dorian",
+    )
+    assert plan.key == "F#"
+    assert plan.scale == "dorian"
