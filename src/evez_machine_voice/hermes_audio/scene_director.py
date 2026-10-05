@@ -102,6 +102,7 @@ def direct_scene(
     explicit_theme: str | None = None,
     performance_kind: PerformanceKind | None = None,
     seed: int | None = None,
+    bpm: int | None = None,
     key: str | None = None,
     scale: str | None = None,
 ) -> HermesScene:
@@ -113,7 +114,7 @@ def direct_scene(
         response_text,
         kind=kind,
         explicit_theme=theme.name,
-        bpm=theme.bpm,
+        bpm=bpm or theme.bpm,
         seed=seed,
         key=key,
         scale=scale,
