@@ -59,6 +59,8 @@ def read_records(session_dir: Path) -> list[SessionRecord]:
                 source_sha256=payload["source_sha256"],
                 events=tuple(payload.get("events", [])),
                 audio=payload.get("audio"),
+                audit_sha256=payload.get("audit_sha256"),
+                audit_verdict=payload.get("audit_verdict"),
                 record_sha256=payload["record_sha256"],
             )
         )
@@ -183,6 +185,8 @@ def verify_chain(session_dir: Path) -> dict[str, Any]:
             "source_sha256": record.source_sha256,
             "events": list(record.events),
             "audio": record.audio,
+            "audit_sha256": record.audit_sha256,
+            "audit_verdict": record.audit_verdict,
         }
         if _hash(canonical) != record.record_sha256:
             problems.append(f"turn {record.turn_index}: record hash mismatch")
