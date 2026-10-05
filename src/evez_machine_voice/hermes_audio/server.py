@@ -329,6 +329,14 @@ def conductor_step(req: ConductorRequest, x_hermes_audio_token: str | None = Hea
     )
 
     paths = write_conductor_step(step, session_dir)
+    audit_report = audit_bundle(
+        response_text=req.response_text,
+        plan_payload=asdict(step.performance_plan),
+        session_verification=verify_chain(session_dir),
+    )
+    if audit_report.verdict == "FAIL":
+        raise HTTPException(500, f"conductor truth gate failed: {audit_report.audit_sha256}")
+
     record = append_record(
         session_dir,
         session_id=req.session_id,
@@ -338,6 +346,8 @@ def conductor_step(req: ConductorRequest, x_hermes_audio_token: str | None = Hea
         plan_sha256=step.performance_plan.plan_sha256,
         source_sha256=step.performance_plan.source_sha256,
         events=step.events,
+        audit_sha256=audit_report.audit_sha256,
+        audit_verdict=audit_report.verdict,
     )
 
     return {
@@ -363,6 +373,7 @@ def conductor_step(req: ConductorRequest, x_hermes_audio_token: str | None = Hea
             "output": paths["plan"],
         },
         "rationale": step.rationale,
+        "audit": asdict(audit_report),
         "session_record_sha256": record.record_sha256,
     }
 
