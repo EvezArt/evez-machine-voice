@@ -223,7 +223,7 @@ def advance_conductor(
 
     # Major semantic turns may change the harmonic color while preserving the key.
     if {"REVEAL", "RESOLUTION"} & set(events):
-        scale = theme.mode
+        scale = {"harmonic minor": "harmonic_minor"}.get(theme.mode, theme.mode)
 
     bpm = int(max(40, min(200, theme.bpm + round((tension - 0.5) * 28))))
     kind = performance_kind
@@ -249,6 +249,7 @@ def advance_conductor(
         explicit_theme=theme.name,
         performance_kind=kind,
         seed=seed_base,
+        bpm=bpm,
         key=performance_plan.key,
         scale=performance_plan.scale,
     )
