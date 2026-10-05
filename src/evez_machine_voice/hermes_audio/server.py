@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from .adversarial import audit_bundle
 from .album import export_album
 from .audio_jobs import AudioJobStore
 from .audio_state import AudioState
@@ -92,6 +93,13 @@ class ConductorRequest(BaseModel):
 
 class SessionExportRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=128, pattern=r"[A-Za-z0-9_.-]+")
+
+
+class AuditRequest(BaseModel):
+    response_text: str = Field(min_length=1, max_length=20000)
+    plan: dict | None = None
+    audio_artifact: dict | None = None
+    session_verification: dict | None = None
 
 
 class ScoreRequest(BaseModel):
@@ -403,6 +411,18 @@ def session_export(req: SessionExportRequest, x_hermes_audio_token: str | None =
     if not (session_dir / "session-ledger.jsonl").exists():
         raise HTTPException(404, "session not found")
     return export_album(session_dir, session_dir / "album")
+
+
+@app.post("/v1/hermes/audit")
+def audit(req: AuditRequest, x_hermes_audio_token: str | None = Header(default=None)):
+    auth(x_hermes_audio_token)
+    report = audit_bundle(
+        response_text=req.response_text,
+        plan_payload=req.plan,
+        audio_artifact=req.audio_artifact,
+        session_verification=req.session_verification,
+    )
+    return asdict(report)
 
 
 @app.post("/v1/hermes/performance-plan")
