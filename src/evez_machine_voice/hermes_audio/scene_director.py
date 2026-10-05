@@ -102,6 +102,8 @@ def direct_scene(
     explicit_theme: str | None = None,
     performance_kind: PerformanceKind | None = None,
     seed: int | None = None,
+    key: str | None = None,
+    scale: str | None = None,
 ) -> HermesScene:
     source_sha256 = _hash(response_text)
     theme = select_theme(response_text, explicit_theme)
@@ -113,6 +115,8 @@ def direct_scene(
         explicit_theme=theme.name,
         bpm=theme.bpm,
         seed=seed,
+        key=key,
+        scale=scale,
     )
 
     arc = _arc(theme, energy, surrealism)
