@@ -9,7 +9,8 @@ on:
       - "tests/test_score_compiler.py"
       - "tests/test_conductor.py"
       - "tests/test_album.py"
-      - "tests/test_audio_jobs.py"
+      - "tests/test_audio_jobs.py tests/test_adversarial.py"
+      - "tests/test_adversarial.py"
       - "config/hermes-*.yaml"
       - "pyproject.toml"
   pull_request:
